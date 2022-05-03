@@ -1,0 +1,44 @@
+{
+  "version": "2",
+  "target": "vsCode",
+  "buildSystem": "makefile",
+  "debugSupport": "none",
+  "configurations": [
+    {
+      "name": "default",
+      "guid": "bbbccd1f-abeb-4002-99f4-057b011e4fc9",
+      "setupType": "quick",
+      "coreBase": "C:\\Program Files (x86)\\Arduino\\hardware\\teensy\\avr",
+      "compilerBase": "C:\\Program Files (x86)\\Arduino\\hardware\\tools\\arm",
+      "makefileExtension": null,
+      "coreStrategy": "copy",
+      "stdLib": "newlib",
+      "sharedLibraries": [
+        "Adafruit_BME280_Library",
+        "Adafruit_BNO055",
+        "Adafruit_BusIO",
+        "Adafruit_Unified_Sensor",
+        "TinyGPSPlus"
+      ],
+      "projectLibraries": [
+        "EEPROM",
+        "SPI",
+        "SD",
+        "SdFat",
+        "Wire",
+        "LiquidCrystal",
+        "LiquidCrystal_I2C-1.1.2.zip",
+        "Adafruit_LiquidCrystal-1.1.0.zip"
+      ],
+      "board": {
+        "name": "Teensy 4.0",
+        "options": {
+          "USB Type": "Serial",
+          "CPU Speed": "600 MHz",
+          "Optimize": "Faster",
+          "Keyboard Layout": "US English"
+        }
+      }
+    }
+  ]
+}

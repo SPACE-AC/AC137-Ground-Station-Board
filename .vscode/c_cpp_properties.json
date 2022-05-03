@@ -1,0 +1,41 @@
+{
+  "configurations": [
+    {
+      "name": "VisualTeensy",
+      "includePath": [
+        "src",
+        "cores/teensy4",
+        "C:/Users/Omsin/Documents/Arduino/libraries/Adafruit_BME280_Library",
+        "C:/Users/Omsin/Documents/Arduino/libraries/Adafruit_BNO055",
+        "C:/Users/Omsin/Documents/Arduino/libraries/Adafruit_BNO055/utility",
+        "C:/Users/Omsin/Documents/Arduino/libraries/Adafruit_BusIO",
+        "C:/Users/Omsin/Documents/Arduino/libraries/Adafruit_Unified_Sensor",
+        "C:/Users/Omsin/Documents/Arduino/libraries/TinyGPSPlus/src",
+        "lib/EEPROM",
+        "lib/SPI",
+        "lib/SD/src",
+        "lib/SdFat/src",
+        "lib/Wire",
+        "lib/Wire/utility",
+        "lib/LiquidCrystal/src",
+        "lib/LiquidCrystal_I2C-1.1.2",
+        "lib/Adafruit_LiquidCrystal-1.1.0",
+        "lib/Adafruit_LiquidCrystal-1.1.0/utility"
+      ],
+      "forcedInclude": [],
+      "defines": [
+        "__IMXRT1062__",
+        "TEENSYDUINO=155",
+        "ARDUINO_TEENSY40",
+        "F_CPU=600000000",
+        "USB_SERIAL",
+        "LAYOUT_US_ENGLISH",
+        "ARDUINO=10813"
+      ],
+      "compilerPath": "C:/PROGRA~2/Arduino/hardware/tools/arm/bin/arm-none-eabi-gcc.exe",
+      "intelliSenseMode": "gcc-arm",
+      "cppStandard": "gnu++14"
+    }
+  ],
+  "version": 4
+}
