@@ -1,4 +1,4 @@
-#define VERSION_NUM "1.0"
+#define VERSION_NUM "1.2"
 #include <Adafruit_AHRS.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_BNO055.h>
@@ -30,6 +30,7 @@
 #define xbee Serial2
 #define gpsSerial Serial3
 
+#define DISPLAY_INTERVAL_MS 500
 #define USE_BNO055
 
 // CONFIG - END
@@ -37,14 +38,9 @@
 #define SEALEVELPRESSURE_HPA 1013.25
 #define CHECK_BIT(var, pos) ((var) & (1 << (pos)))
 
-#define UP 2
-#define DOWN 3
-#define LEFT 4
-#define RIGHT 5
-#define UP_LEFT 8
-#define UP_RIGHT 9
-#define DOWN_LEFT 10
-#define DOWN_RIGHT 11
+#define UPDOWN 2
+#define LEFTRIGHT 3
+#define UP 4
 #define BLANK 12
 
 TinyGPSPlus gps;
@@ -66,6 +62,10 @@ float voltage = 0;
 float c_lat = 0, c_lng = 0, c_alt = 0;
 
 char fileName[100];
+
+int mod(int x, int y) {
+    return x < 0 ? ((x + 1) % y) + y - 1 : x % y;
+}
 
 // A class of coordinate consisting of latitude, longitude, altitude
 struct Coordinate {
@@ -167,7 +167,7 @@ class Gis {
         float b = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon);
         float theta = atan2(a, b);
         theta = degrees(theta);
-        return theta;
+        return mod(theta, 360);
     }
 
     /**
@@ -227,6 +227,26 @@ class Gis {
     }
 };
 
+float bearing(float lat, float lon, float lat2, float lon2) {
+    float teta1 = radians(lat);
+    float teta2 = radians(lat2);
+    float delta1 = radians(lat2 - lat);
+    float delta2 = radians(lon2 - lon);
+
+    //==================Heading Formula Calculation================//
+
+    float y = sin(delta2) * cos(teta2);
+    float x = cos(teta1) * sin(teta2) - sin(teta1) * cos(teta2) * cos(delta2);
+    float brng = atan2(y, x);
+    brng = degrees(brng);  // radians to degrees
+    brng = (((int)brng + 360) % 360);
+
+    Serial.print("Heading GPS: ");
+    Serial.println(brng);
+
+    return brng;
+}
+
 class SMA {
     int size;
     int count;
@@ -277,8 +297,29 @@ byte batteryIcon[] = {
     B11111,
     B00000};
 
+byte updown[] = {
+    B00100,
+    B01110,
+    B11111,
+    B00100,
+    B00100,
+    B11111,
+    B01110,
+    B00100};
+
+byte leftright[] = {
+    B00000,
+    B00000,
+    B01010,
+    B11111,
+    B01010,
+    B00000,
+    B00000,
+    B00000};
+
 byte up[] = {
     B00100,
+
     B01110,
     B11111,
     B00100,
@@ -286,36 +327,6 @@ byte up[] = {
     B00100,
     B00100,
     B00100};
-
-byte down[] = {
-    B00100,
-    B00100,
-    B00100,
-    B00100,
-    B00100,
-    B11111,
-    B01110,
-    B00100};
-
-byte left[] = {
-    B00000,
-    B00000,
-    B01000,
-    B11111,
-    B01000,
-    B00000,
-    B00000,
-    B00000};
-
-byte right[] = {
-    B00000,
-    B00000,
-    B00010,
-    B11111,
-    B00010,
-    B00000,
-    B00000,
-    B00000};
 
 byte degreeLeft[] = {
     B11100,
@@ -367,14 +378,17 @@ void setup() {
     pinMode(VOLTAGE_PIN, INPUT);
 
     Serial.println("Initilizing LCD...");
+    // int startTime = millis();
     lcd.init();        // initialize the lcd
     lcd.begin(20, 4);  // set the size of the display
-    // Print a message to the LCD.
     lcd.backlight();
     lcd.setCursor(3, 0);
     lcd.print("GS Board v" + String(VERSION_NUM));
-    lcd.setCursor(0, 2);
+    lcd.setCursor(6, 1);
+    lcd.print("By Omsin");
+    lcd.setCursor(0, 3);
     lcd.print("Starting...");
+    // lcd.print((millis() - startTime) / 1000.0F);
 
     bool bmeSuccess = true, bnoSuccess = true, sdSuccess = true;
     if (bme.begin(0x76, &Wire1))
@@ -421,7 +435,7 @@ void setup() {
     }
 
     if (!bmeSuccess || !bnoSuccess || !sdSuccess) {
-        lcd.setCursor(0, 2);
+        lcd.setCursor(0, 3);
         lcd.print("Errors:");
         if (!bmeSuccess) lcd.print(" BME");
 #ifdef USE_BNO055
@@ -432,7 +446,7 @@ void setup() {
         if (!sdSuccess) lcd.print(" SD");
         delay(2000);
     } else {
-        lcd.setCursor(0, 2);
+        lcd.setCursor(0, 3);
         lcd.print("Succeed! No errors.");
         delay(1000);
     }
@@ -450,12 +464,14 @@ void setup() {
 
     lcd.createChar(0, batteryIcon);
     lcd.createChar(1, degreeLeft);
-    lcd.createChar(2, up);
-    lcd.createChar(3, down);
-    lcd.createChar(4, left);
-    lcd.createChar(5, right);
+    lcd.createChar(2, updown);
+    lcd.createChar(3, leftright);
+    lcd.createChar(4, up);
     lcd.createChar(6, degreeRight);
     lcd.createChar(7, vertical);
+
+    lcd.setCursor(0, 0);
+    lcd.print('#');
 }
 
 void getBMEData() {
@@ -545,16 +561,18 @@ std::vector<String> split(String str, char separator) {
     return internal;
 }
 
-unsigned long lastSendSelf = 0, lastStatus = 0, count = 0;
+unsigned long lastSendSelf = 0, lastStatus = 0, lastPacketCount = 0, count = 0;
 bool didResetStatus = true;
 SMA batterySma(100), tempSma(100), losSma(5);
+float lastBattery = 1000, lastTemp = 1000, lastAzimuth = 1000, lastElevation = 1000, lastGpsStatus = 1000, lastDistance = 1000;
 void loop() {
     while (gpsSerial.available())
         gps.encode(gpsSerial.read());
     if (Serial.available()) {
         String command = Serial.readStringUntil('\r');
-        lcd.setCursor(9, 0);
-        lcd.print("Sending cmd");
+        lcd.setCursor(12, 0);
+        lcd.print("Sending");
+        lcd.write(UP);
         lastStatus = millis();
         didResetStatus = false;
         xbee.print(command + "\r");
@@ -567,21 +585,24 @@ void loop() {
         File file = SD.open(fileName, FILE_WRITE);
         if (file) {
             file.println(telemetry);
-            file.close();
+            file.flush();
         }
-
-        lcd.setCursor(0, 0);
-        lcd.print("#");
-        lcd.print(++count);
+        count++;
 
         std::vector<String> splitted = split(telemetry, ',');
-        if (splitted.size() >= 11) {
+        if (splitted.size() >= 12 && splitted[3] == "C") {
             c_lat = splitted[10].toFloat();
             c_lng = splitted[11].toFloat();
             c_alt = splitted[6].toFloat();
         }
     }
-    if (millis() - lastSendSelf > 200) {
+    if (millis() - lastPacketCount > 1000) {
+        lastPacketCount = millis();
+        lcd.setCursor(1, 0);
+        // lcd.print("#");
+        lcd.print(count);
+    }
+    if (millis() - lastSendSelf > DISPLAY_INTERVAL_MS) {
         lastSendSelf = millis();
         // Serial.print(String(altitude) + ',' +
         //              temp + ',' + String(voltage) + ',' + gyro_r + ',' + gyro_p + ',' + gyro_y +
@@ -593,73 +614,102 @@ void loop() {
         tempSma.add(temp);
         batterySma.add(getBattery());
 
-        byte isOkToPoint = 0;
+        byte gpsStatus = 0;
         if (c_lat == 0 && c_lng == 0)
-            isOkToPoint += 1;
+            gpsStatus += 1;
         if (lat == 0 && lng == 0)
-            isOkToPoint += 2;
+            gpsStatus += 2;
 
-        if (isOkToPoint == 3) {
-            lcd.setCursor(1, 1);
-            lcd.print("No remote GPS data");
-            lcd.setCursor(4, 2);
-            lcd.print("No GPS data");
-        } else if (isOkToPoint == 1) {
-            lcd.setCursor(1, 1);
-            lcd.print("No remote GPS data");
-            lcd.setCursor(0, 2);
-            lcd.print("                   ");
-        } else if (isOkToPoint == 2) {
-            lcd.setCursor(0, 1);
-            lcd.print("    No GPS data    ");
-            lcd.setCursor(0, 2);
-            lcd.print("                   ");
-        } else if (isOkToPoint == 0) {
+        unsigned long start = millis();
+        if (gpsStatus != lastGpsStatus) {
+            if (gpsStatus == 3) {
+                lcd.setCursor(0, 1);
+                lcd.print(" No remote GPS data");
+                lcd.setCursor(0, 2);
+                lcd.print("    No GPS data");
+            } else if (gpsStatus == 1) {
+                lcd.setCursor(0, 1);
+                lcd.print(" No remote GPS data");
+                lcd.setCursor(0, 2);
+                lcd.print("                   ");
+            } else if (gpsStatus == 2) {
+                lcd.setCursor(0, 1);
+                lcd.print("    No GPS data    ");
+                lcd.setCursor(0, 2);
+                lcd.print("                   ");
+            }
+        }
+        if (gpsStatus == 0) {
+            if (lastGpsStatus != 0) {
+                // lcd.setCursor(0, 1);
+                // lcd.print("                   ");
+                lcd.setCursor(0, 1);
+                lcd.print("Distance           ");
+                lcd.setCursor(0, 2);
+                lcd.print("                   ");
+                lcd.setCursor(9, 1);
+                lcd.write(7);
+                lcd.setCursor(9, 2);
+                lcd.write(7);
+                lcd.setCursor(11, 1);
+                lcd.write(LEFTRIGHT);
+                lcd.print(' ');
+                lcd.setCursor(11, 2);
+                lcd.write(UPDOWN);
+                lcd.print(' ');
+            }
+            lastGpsStatus = gpsStatus;
             Gis gis(Coordinate(lat, lng, 0), Coordinate(c_lat, c_lng, c_alt), pitch, -yaw, roll);
 
             losSma.add(gis.getLineOfSight());
-            lcd.setCursor(0, 1);
-            lcd.print("Distance   ");
-            lcd.setCursor(0, 2);
-            lcd.print(String(losSma.getAverage(), 1));
-            lcd.print(" m  ");
-
-            lcd.setCursor(9, 1);
-            lcd.write(7);
-            lcd.setCursor(9, 2);
-            lcd.write(7);
-
+            if (lastDistance != losSma.getAverage()) {
+                lcd.setCursor(0, 2);
+                lcd.print(String(losSma.getAverage(), 1));
+                lcd.print(" m  ");
+                lastDistance = losSma.getAverage();
+            }
             // lcd.print("Heading: ");
-            short heading = gis.getHeading();
-            short elev = round(gis.getElevationApprox(true));
-            lcd.setCursor(11, 1);
-            lcd.write(heading > 0 ? 5 : 4);
-            lcd.print(' ');
-            lcd.print(abs(heading));
-            lcd.write(6);
-            lcd.print("  ");
-            lcd.setCursor(11, 2);
-            lcd.write(elev > 0 ? 2 : 3);
-            lcd.print(' ');
-            lcd.print(abs(elev));
-            lcd.write(6);
-            lcd.print("  ");
+            short heading = round(gis.getAzimuth());
+            short elev = round(gis.getElevationApprox(false));
+            if (lastAzimuth != heading) {
+                lcd.setCursor(13, 1);
+                lcd.print(heading);
+                lcd.write(6);
+                lastAzimuth = heading;
+            }
+            if (lastElevation != elev) {
+                lcd.setCursor(13, 2);
+                lcd.print(elev);
+                lcd.write(6);
+                lcd.print("  ");
+                lastElevation = elev;
+            }
         }
+        lastGpsStatus = gpsStatus;
 
-        lcd.setCursor(0, 3);
-        lcd.write(0);
-        lcd.print(' ');
-        lcd.print(batterySma.getAverage());
-        lcd.print("V");
-
-        lcd.setCursor(13, 3);
-        lcd.print(tempSma.getAverage());
-        lcd.write(6);
-        lcd.print("C");
+        if (abs(batterySma.getAverage() - lastBattery) >= 0.009F) {
+            lcd.setCursor(0, 3);
+            lcd.write(0);
+            lcd.print(' ');
+            lcd.print(batterySma.getAverage());
+            lcd.print("V");
+            lastBattery = batterySma.getAverage();
+        }
+        if (abs(tempSma.getAverage() - lastTemp) >= 0.009F) {
+            lcd.setCursor(13, 3);
+            lcd.print(tempSma.getAverage());
+            lcd.write(6);
+            lcd.print("C");
+            lastTemp = tempSma.getAverage();
+        }
+        // Serial.print("Single loop took ");
+        // Serial.print(millis() - start);
+        // Serial.println(" ms");
     }
+
     if (!didResetStatus && millis() - lastStatus > 1000) {
         didResetStatus = true;
-        lcd.setCursor(7, 0);
-        lcd.print("             ");
+        lcd.setCursor(12, 0);
+        lcd.print("        ");
     }
 }
